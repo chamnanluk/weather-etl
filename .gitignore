@@ -5,7 +5,7 @@ __pycache__/
 
 # Local environment
 .env.local
-.env/
+.env
 .venv/
 
 # Docker and runtime data
