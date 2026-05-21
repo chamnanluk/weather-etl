@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Local environment
+.env.local
+.venv/
+
+# Docker and runtime data
+postgres-data/
+minio-data/
+hive-metastore-data/
+
+# Logs
+*.log

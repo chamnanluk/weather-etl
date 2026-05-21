@@ -1,0 +1,26 @@
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore local environment files
+.env
+.env.local
+.venv/
+
+# Ignore Docker volumes and runtime data
+postgres-data/
+minio-data/
+hive-metastore-data/
+
+# Ignore logs
+*.log
+
+# Ignore Airflow compiled files
+airflow/__pycache__/
+
+# Ignore data files
+data/raw/
+data/processed/

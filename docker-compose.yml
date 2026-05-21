@@ -1,0 +1,199 @@
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: docker/airflow/Dockerfile
+  env_file:
+    - .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@lakehouse-airflow-postgres:5432/airflow
+    AIRFLOW__WEBSERVER__SECRET_KEY: local_lakehouse_secret
+    AIRFLOW_CONN_SPARK_DEFAULT: spark://spark-master:7077
+    AIRFLOW_CONN_TRINO_DEFAULT: trino://trino@trino:8080/iceberg
+    SPARK_HOME: /opt/spark
+    PATH: /opt/spark/bin:/home/airflow/.local/bin:/usr/local/bin:/usr/bin:/bin
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./data:/opt/airflow/data
+    - ./spark/jobs:/opt/airflow/spark/jobs
+    - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+  networks:
+    - lakehouse
+  depends_on:
+    airflow-postgres:
+      condition: service_healthy
+    minio:
+      condition: service_healthy
+    hive-metastore:
+      condition: service_started
+    spark-master:
+      condition: service_started
+
+services:
+  minio:
+    image: minio/minio:RELEASE.2024-06-13T22-53-53Z
+    container_name: lakehouse-minio
+    command: server /data --console-address ":9001"
+    env_file:
+      - .env
+    ports:
+      - "19000:9000"
+      - "19001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - lakehouse
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:RELEASE.2024-06-12T14-34-03Z
+    container_name: lakehouse-minio-init
+    env_file:
+      - .env
+    depends_on:
+      minio:
+        condition: service_healthy
+    networks:
+      - lakehouse
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set lakehouse http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD;
+      mc mb --ignore-existing lakehouse/lakehouse;
+      mc anonymous set none lakehouse/lakehouse;
+      "
+
+  hive-metastore:
+    image: apache/hive:4.0.0
+    container_name: lakehouse-hive-metastore
+    environment:
+      SERVICE_NAME: metastore
+      HIVE_CUSTOM_CONF_DIR: /opt/hive/conf
+    ports:
+      - "19083:9083"
+    volumes:
+      - ./config/hive/hive-site.xml:/opt/hive/conf/hive-site.xml
+      - hive-metastore-data:/opt/hive/data
+    networks:
+      - lakehouse
+    depends_on:
+      minio:
+        condition: service_healthy
+
+  spark-master:
+    image: apache/spark:3.5.5-java17-python3
+    container_name: lakehouse-spark-master
+    user: root
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.master.Master", "--host", "spark-master"]
+    ports:
+      - "17077:7077"
+      - "18081:8080"
+    volumes:
+      - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - ./spark/jobs:/opt/spark/jobs
+      - ./data:/opt/spark/data
+    networks:
+      - lakehouse
+    depends_on:
+      hive-metastore:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+  spark-worker:
+    image: apache/spark:3.5.5-java17-python3
+    container_name: lakehouse-spark-worker
+    user: root
+    command: ["/opt/spark/bin/spark-class", "org.apache.spark.deploy.worker.Worker", "spark://spark-master:7077", "--cores", "2", "--memory", "2G"]
+    ports:
+      - "18082:8081"
+    volumes:
+      - ./config/spark/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf
+      - ./spark/jobs:/opt/spark/jobs
+      - ./data:/opt/spark/data
+    networks:
+      - lakehouse
+    depends_on:
+      spark-master:
+        condition: service_started
+
+  trino:
+    image: trinodb/trino:443
+    container_name: lakehouse-trino
+    ports:
+      - "18080:8080"
+    volumes:
+      - ./config/trino/catalog:/etc/trino/catalog
+    networks:
+      - lakehouse
+    depends_on:
+      hive-metastore:
+        condition: service_started
+      minio:
+        condition: service_healthy
+
+  airflow-postgres:
+    image: postgres:15
+    container_name: lakehouse-airflow-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - airflow-postgres-data:/var/lib/postgresql/data
+    networks:
+      - lakehouse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    <<: *airflow-common
+    container_name: lakehouse-airflow-init
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password admin \
+          --firstname Data \
+          --lastname Engineer \
+          --role Admin \
+          --email admin@example.com || true
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    container_name: lakehouse-airflow-webserver
+    command: webserver
+    ports:
+      - "8088:8080"
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    container_name: lakehouse-airflow-scheduler
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+networks:
+  lakehouse:
+    name: lakehouse
+
+volumes:
+  minio-data:
+  hive-metastore-data:
+  airflow-postgres-data:

@@ -1,0 +1,9 @@
+--constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.9.3/constraints-3.11.txt
+apache-airflow==2.9.3
+apache-airflow-providers-apache-spark
+apache-airflow-providers-trino
+boto3
+pandas
+pyspark==3.5.1
+trino
+jupyterlab

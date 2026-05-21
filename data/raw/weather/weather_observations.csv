@@ -1,0 +1,11 @@
+station_id,observed_at,temperature_c,humidity_pct,wind_kph,condition
+PNH,2026-05-01T00:00:00,31.2,72,11,cloudy
+PNH,2026-05-01T06:00:00,34.5,61,14,sunny
+PNH,2026-05-01T12:00:00,35.4,58,17,sunny
+PNH,2026-05-02T00:00:00,30.8,76,9,rain
+PNH,2026-05-02T06:00:00,33.1,68,12,cloudy
+REP,2026-05-01T00:00:00,29.9,79,8,rain
+REP,2026-05-01T06:00:00,33.7,63,10,cloudy
+REP,2026-05-01T12:00:00,36.0,55,13,sunny
+REP,2026-05-02T00:00:00,30.2,82,7,rain
+REP,2026-05-02T06:00:00,32.8,69,11,cloudy
